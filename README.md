@@ -1,1 +1,1 @@
-# weight-planner
+# weight-loss-planner
