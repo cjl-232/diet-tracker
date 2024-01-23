@@ -136,13 +136,12 @@ def append_meal(components : list[tuple[int, float]]):
     except BaseException as error:
         print('Failed to append meal.')
         _execute_query('DELETE FROM meals WHERE id = ?', (meal_id,))
-        
-        
-#SUM THE RHS, FILTER THE LHS, LEFT JOIN RHS TO THE LHS
+
+
 def get_weight_history(
     start_datetime : datetime = None,
     end_datetime : datetime = None,
-):
+) -> list[tuple[int, float]]:
     query = 'SELECT weight, timestamp FROM weight_observations'
     conditions = []
     timestamp_bounds = []
@@ -160,7 +159,7 @@ def get_weight_history(
 def get_meal_calories(
     start_datetime : datetime = None,
     end_datetime : datetime = None,
-):
+) -> list[tuple[int, float]]:
     query = """
         SELECT m.timestamp, COALESCE(SUM(mc.quantity * c.unit_calories), 0)
         FROM meals m
