@@ -1,1 +1,1 @@
-# weight-loss-tracker
+# diet-tracker
