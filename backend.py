@@ -40,10 +40,7 @@ def _create_consumption_tables():
     _execute_query("""
         CREATE TABLE IF NOT EXISTS consumables (
             id INTEGER PRIMARY KEY,
-            name TEXT NOT NULL,
-            consumable_group_id INTEGER REFERENCES consumable_groups
-                ON UPDATE CASCADE
-                ON DELETE CASCADE,
+            name TEXT NOT NULL UNIQUE,
             unit_calories REAL NOT NULL CHECK (unit_calories >= 0.0),
             unit_label TEXT NOT NULL DEFAULT "unit"
         )
@@ -99,10 +96,10 @@ def append_consumable(
     _execute_query(
         """
             INSERT INTO consumables (
-                name, unit_calories, unit_label, consumable_group_id
+                name, unit_calories, unit_label
             )
             VALUES (
-                :name, :calories, :unit_label, :consumable_group_id
+                :name, :calories, :unit_label
             )
         """,
         {
@@ -127,7 +124,7 @@ def append_meal(components : list[tuple[int, float]]):
                     )
                 """,
                 params = {
-                    'consumable_id': component[0],
+                    'consumable_id': int(component[0]),
                     'meal_id': meal_id,
                     'quantity': component[1],
                 },
@@ -136,7 +133,11 @@ def append_meal(components : list[tuple[int, float]]):
     except BaseException as error:
         print('Failed to append meal.')
         _execute_query('DELETE FROM meals WHERE id = ?', (meal_id,))
-
+        
+def get_consumables():
+     return _execute_query(
+        query = 'SELECT id, name, unit_calories, unit_label FROM consumables'
+    )
 
 def get_weight_history(
     start_datetime : datetime = None,
@@ -161,7 +162,7 @@ def get_meal_calories(
     end_datetime : datetime = None,
 ) -> list[tuple[int, float]]:
     query = """
-        SELECT m.timestamp, COALESCE(SUM(mc.quantity * c.unit_calories), 0)
+        SELECT COALESCE(SUM(mc.quantity * c.unit_calories), 0), m.timestamp
         FROM meals m
         LEFT JOIN meal_components mc ON m.id = mc.meal_id
         LEFT JOIN consumables c ON c.id = mc.consumable_id
