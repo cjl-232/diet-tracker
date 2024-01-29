@@ -59,6 +59,8 @@ class MealAppendWindow(ctk.CTkToplevel):
                 self.label = ctk.CTkLabel(
                     master = master,
                     font = font,
+                    anchor = 'w',
+                    justify = 'left',
                 )
         
         def render_components(choice = None):
@@ -68,24 +70,29 @@ class MealAppendWindow(ctk.CTkToplevel):
                     column = 1,
                     padx = 5,
                     pady = 5,
+                    sticky = 'ew',
                 )
                 self.components[i].quantity.grid(
                     row = i,
                     column = 2,
                     padx = 5,
                     pady = 5,
+                    sticky = 'ew',
                 )
                 self.components[i].label.grid(
                     row = i,
                     column = 3,
                     padx = 5,
                     pady = 5,
+                    sticky = 'w',
                 )
                 if self.components[i].dropdown.get() != 'None':
                     self.components[i].quantity.configure(state = 'normal')
                     name = self.components[i].dropdown.get()
                     unit = consumables.loc[consumables['name'] == name]['unit_label'].iloc[0]
-                    self.components[i].label.configure(text = unit + 's')
+                    self.components[i].label.configure(
+                        text = unit + ('s' if unit[-1] != 's' else '')
+                    )
                 else:
                     self.components[i].quantity.delete(0, 'end')
                     self.components[i].quantity.configure(state = 'disabled')
@@ -150,7 +157,6 @@ class MealAppendWindow(ctk.CTkToplevel):
                 justify = 'right',
             )
             if msg.get() == 'Confirm':
-                print(components)
                 backend.append_meal(components)
                 master.update_dynamic_elements()
                 self.destroy()
@@ -452,7 +458,7 @@ class MealTrackerTab(ctk.CTkTabview):
         def append_consumable_button_event():
             taken_names = pd.DataFrame(
                 data = backend.get_consumables(),
-                columns = ['name', 'calories', 'unit_label'],
+                columns = ['id', 'name', 'calories', 'unit_label'],
             )['name']
             name = ctk.CTkInputDialog(
                 title = 'Define Consumable',
