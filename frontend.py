@@ -3,6 +3,8 @@
 
 import re
 import statistics
+from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 import customtkinter as ctk
@@ -16,10 +18,158 @@ from matplotlib.ticker import StrMethodFormatter
 
 import backend
 
+#Defaultdict for list?
+
 #Left side for meal selection and choices, right for calorie count & confirm
+
+
+#Highly consider replacing junk arguments with self.consumables, self.unit_labels
+class MealConsumablesList(ctk.CTkFrame):
+
+    font = ('Arial', 16)
+    
+    #Struct of necessary components
+    #Have a get_calories function that takes a dict?
+    #Still use a LIST of these, not a dictionary
+    @dataclass
+    class Component:
+        master: ctk.CTkFrame
+        var: ctk.StringVar
+        dropdown: ctk.CTkOptionMenu
+        entry: ctk.CTkEntry
+        unit_label: ctk.CTkLabel
+        
+        def get_calories(self, calorie_counts: dict[str, float]) -> float:
+            if self.dropdown.get() != 'None' and self.entry.get() != '':
+                unit_calories = calorie_counts[self.dropdown.get()]
+                quantity = float(self.entry.get())
+                return unit_calories * quantity
+            return 0.0
+            
+        def update_unit_label(self, unit_labels: dict[str, str]) -> None:
+            if self.dropdown.get() in unit_labels.keys():
+                self.unit_label.configure(
+                    text = self.unit_labels[self.dropdown.get()],
+                )
+            else:
+                self.unit_label.configure(text = 'units')
+                
+        def text_var_trace_callback(self, *args):
+            if re.search('^(\\d+(\\.\\d+)?)?$', self.var.get()) is not None:
+                self.master.render_components()
+            
+                
+    def get_calorie_sum(self):
+        result = 0.0
+        for component in self.components:
+            result += component.get_calories(self.calorie_counts)
+        return result
+        
+    def get_components(self):
+        result = []
+        for component in self.components[:-1]:
+            result += [(
+                self.identifiers[component.dropdown.get()],
+                float(component.entry.get())
+            )]
+        return result
+    
+    def render_components(self, value = None) -> None:
+        for component in self.components:
+            component.dropdown.grid_forget()
+            component.entry.grid_forget()
+            component.unit_label.grid_forget()
+        subset = filter(lambda x: x.dropdown.get() != 'None', self.components)
+        self.components = list(subset)
+        self.components += [self.create_component()]
+        for index, value in enumerate(self.components):
+            if value.dropdown.get() != 'None':
+                value.entry.configure(state = 'normal')
+                label_text = self.unit_labels[value.dropdown.get()]
+            else:
+                value.entry.configure(state = 'disabled')
+                longest_label = max(self.unit_labels.values(), key = len)
+                label_text = ' ' * len(longest_label)
+            value.unit_label.configure(text = label_text)
+            value.dropdown.grid(
+                row = index,
+                column = 1,
+                padx = 5,
+                pady = 5,
+                sticky = 'ew',
+            )
+            value.entry.grid(
+                row = index,
+                column = 2,
+                padx = 5,
+                pady = 5,
+                sticky = 'ew',
+            )
+            value.unit_label.grid(
+                row = index,
+                column = 3,
+                padx = 5,
+                pady = 5,
+                sticky = 'w',
+            )
+        self.master.calorie_summary.configure(text = self.get_calorie_sum())
+    
+    def create_component(self) -> Component:
+    
+        def entry_callback(entry):
+            return re.search('^(\\d+(\\.\\d*)?)?$', entry) is not None
+            
+        def entry_change_callback(var, *args):
+            print(var.get())
+            if re.search('^(\\d+(\\.\\d+)?)?$', var) is not None:
+                self.render_components()
+            
+        component = self.Component(
+            master = self,
+            var = ctk.StringVar(),
+            dropdown = ctk.CTkOptionMenu(
+                master = self,
+                values = ['None'] + self.consumables,
+                font = self.font,
+                dropdown_font = self.font,
+                command = self.render_components,
+            ),
+            entry = ctk.CTkEntry(
+                master = self,
+                font = self.font,
+                validate = 'key',
+                validatecommand = (self.register(entry_callback), '%P'),
+            ),
+            unit_label = ctk.CTkLabel(
+                master = self,
+                anchor = 'w',
+                font = self.font,
+            )
+        )
+        component.entry.configure(textvariable = component.var)
+        component.var.trace('w', component.text_var_trace_callback)
+        return component
+        
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        consumables_df = pd.DataFrame(
+            data = backend.get_consumables(),
+            columns = ['id', 'name', 'calories', 'unit_label'],
+        )
+        self.components = []
+        self.consumables = sorted(consumables_df['name'].tolist())
+        self.identifiers = {}
+        self.calorie_counts = {}
+        self.unit_labels = {}
+        for index, value in enumerate(consumables_df['name'].tolist()):
+            self.identifiers[value] = consumables_df['id'][index]
+            self.calorie_counts[value] = consumables_df['calories'][index]
+            self.unit_labels[value] = consumables_df['unit_label'][index]
+
+
 class MealAppendWindow(ctk.CTkToplevel):
-    def __init__(self, master, **kwargs):
-        super().__init__(master, **kwargs)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.title('Append Meal')
         self.geometry('800x600')
         
@@ -31,91 +181,9 @@ class MealAppendWindow(ctk.CTkToplevel):
         )
         font = ('Arial', 16)
         
-        self.components_frame = ctk.CTkFrame(
+        self.components_frame = MealConsumablesList(
             master = self,
             border_width = 2,
-        )                
-        self.components = []
-        def callback(entry):
-            return re.search('^\\d+(\\.\\d*)?$', entry) is not None or entry == ''
-        class Component(ctk.CTkFrame):
-            def __init__(self, master, command, consumables, **kwargs):
-                super().__init__(master, **kwargs)
-                
-                self.dropdown = ctk.CTkOptionMenu(
-                    master = master,
-                    values = ['None'] + sorted(consumables['name'].tolist()),
-                    command = command,
-                    font = font,
-                )
-                    
-                self.quantity = ctk.CTkEntry(
-                    master = master,
-                    state = 'disabled',
-                    font = font,
-                    validate = 'key',
-                    validatecommand = (self.register(callback), '%P'),
-                )
-                self.label = ctk.CTkLabel(
-                    master = master,
-                    font = font,
-                    anchor = 'w',
-                    justify = 'left',
-                )
-        
-        def render_components(choice = None):
-            for i in range(len(self.components)):
-                self.components[i].dropdown.grid(
-                    row = i,
-                    column = 1,
-                    padx = 5,
-                    pady = 5,
-                    sticky = 'ew',
-                )
-                self.components[i].quantity.grid(
-                    row = i,
-                    column = 2,
-                    padx = 5,
-                    pady = 5,
-                    sticky = 'ew',
-                )
-                self.components[i].label.grid(
-                    row = i,
-                    column = 3,
-                    padx = 5,
-                    pady = 5,
-                    sticky = 'w',
-                )
-                if self.components[i].dropdown.get() != 'None':
-                    self.components[i].quantity.configure(state = 'normal')
-                    name = self.components[i].dropdown.get()
-                    unit = consumables.loc[consumables['name'] == name]['unit_label'].iloc[0]
-                    self.components[i].label.configure(
-                        text = unit + ('s' if unit[-1] != 's' else '')
-                    )
-                else:
-                    self.components[i].quantity.delete(0, 'end')
-                    self.components[i].quantity.configure(state = 'disabled')
-                    self.components[i].label.configure(text = '')
-                if self.components[i].dropdown.get() == 'None':
-                    for j in range(i + 1, len(self.components)):
-                        self.components[j].dropdown.destroy()
-                        self.components[j].quantity.destroy()
-                        self.components[j].label.destroy()
-                    self.components = self.components[0:(i + 1)]
-                    break
-                elif i + 1 == len(self.components):
-                    self.components.append(
-                        Component(
-                            self.components_frame,
-                            render_components,
-                            consumables,
-                        )
-                    )
-                    render_components()
-                    
-        self.components.append(
-            Component(self.components_frame, render_components, consumables)
         )
         
         self.summary_frame = ctk.CTkFrame(
@@ -136,15 +204,10 @@ class MealAppendWindow(ctk.CTkToplevel):
             text = 'Confirm',
             font = font,
         )
+        self.components_frame.render_components()
         
         def confirm_button_event():
-            components = []
-            for i in range(len(self.components)):
-                name = self.components[i].dropdown.get()
-                quantity = self.components[i].quantity.get()
-                if name != 'None' and quantity != '':
-                    index = consumables.loc[consumables['name'] == name].index[0]
-                    components.append((index, float(quantity)))
+            components = self.components_frame.get_components()
             msg = CTkMessagebox(
                 title = 'Confirm Weight',
                 message = ' '.join([
@@ -158,7 +221,7 @@ class MealAppendWindow(ctk.CTkToplevel):
             )
             if msg.get() == 'Confirm':
                 backend.append_meal(components)
-                master.update_dynamic_elements()
+                self.master.update_dynamic_elements()
                 self.destroy()
                     
                         
@@ -173,7 +236,7 @@ class MealAppendWindow(ctk.CTkToplevel):
             pady = 5,
             sticky = 'nws',
         )
-        render_components()
+        #render_components()
         self.summary_frame.grid(
             row = 1,
             column = 2,
@@ -264,7 +327,7 @@ class MealTrackerTab(ctk.CTkTabview):
                 pd.date_range(
                     start = min(df.index),
                     end = max(df.index),
-                    periods = min(len(df.index), 7),
+                    periods = min(len(df.index), 5),
                     normalize = True,
                 ),
             )
@@ -466,7 +529,7 @@ class MealTrackerTab(ctk.CTkTabview):
             ).get_input()
             if name is None:
                 return
-            elif taken_names.str.contains(name, regex = False).any():
+            elif taken_names.str.contains('^' + name + '%').any():
                 CTkMessagebox(
                     title = 'Invalid Value',
                     message = "The name '" + name + "' is already taken.",
@@ -808,7 +871,7 @@ class WeightTrackerTab(ctk.CTkTabview):
                 pd.date_range(
                     start = min(df.index),
                     end = max(df.index),
-                    periods = min(len(df.index), 7),
+                    periods = min(len(df.index), 5),
                     normalize = True,
                 ),
             )
